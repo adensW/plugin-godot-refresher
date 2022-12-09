@@ -1,6 +1,5 @@
-tool
+@tool
 extends EditorPlugin
-
 const ADDONS_PATH = "res://addons/"
 const PLUGIN_CONFIG_DIR = "plugins/plugin_refresher"
 const PLUGIN_CONFIG = "settings.cfg"
@@ -11,15 +10,16 @@ var plugin_config = ConfigFile.new()
 var refresher
 
 func _enter_tree():
-	refresher = preload("plugin_refresher.tscn").instance()
+	refresher = preload("refresher_ui.tscn").instantiate()
 	add_control_to_container(CONTAINER_TOOLBAR, refresher)
 
 	# Watch whether any plugin is changed, added or removed on the filesystem
 	var efs = get_editor_interface().get_resource_filesystem()
-	efs.connect("filesystem_changed", self, "_on_filesystem_changed")
-
-	refresher.connect("request_refresh_plugin", self, "_on_request_refresh_plugin")
-	refresher.connect("confirm_refresh_plugin", self, "_on_confirm_refresh_plugin")
+	efs.filesystem_changed.connect(_on_filesystem_changed)
+	refresher.request_refresh_plugin.connect(_on_request_refresh_plugin)
+	refresher.confirm_refresh_plugin.connect(_on_confirm_refresh_plugin)
+#	refresher.connect("request_refresh_plugin", Callable(self, "_on_request_refresh_plugin")
+#	refresher.connect("confirm_refresh_plugin", self, "_on_confirm_refresh_plugin")
 
 	_reload_plugins_list()
 	_load_settings()
@@ -35,15 +35,14 @@ func _reload_plugins_list():
 	var plugins = {}
 	var origins = {}
 
-	var dir = Directory.new()
-	dir.open(ADDONS_PATH)
-	dir.list_dir_begin(true, true)
+	var dir = DirAccess.open(ADDONS_PATH)
+	dir.list_dir_begin()
 	var file = dir.get_next()
 	while file:
-		var addon_dir = ADDONS_PATH.plus_file(file)
+		var addon_dir = ADDONS_PATH+file
 		if dir.dir_exists(addon_dir) and file != refresher_dir:
 			var display_name = file
-			var plugin_config_path = addon_dir.plus_file("plugin.cfg")
+			var plugin_config_path = addon_dir+"/"+"plugin.cfg"
 			if not dir.file_exists(plugin_config_path):
 				file = dir.get_next()
 				continue # not a plugin
@@ -63,18 +62,15 @@ func _reload_plugins_list():
 		if plugin_names.size() > 1:
 			for n in plugin_names:
 				plugins[n] = "%s (%s)" % [display_name, n]
-
 	refresher.update_items(plugins)
-
 
 func _load_settings():
 	var path = get_config_path()
-
-	var fs = Directory.new()
-	if not fs.file_exists(path):
+	if not  FileAccess.file_exists(path):
 		# Create new if running for the first time
 		var config = ConfigFile.new()
-		fs.make_dir_recursive(path.get_base_dir())
+		var dir = DirAccess.open(get_config_base_path())
+		dir.make_dir_recursive(path.get_base_dir())
 		config.save(path)
 	else:
 		plugin_config.load(path)
@@ -83,12 +79,12 @@ func _load_settings():
 func _save_settings():
 	plugin_config.save(get_config_path())
 
-
+func get_config_base_path():
+	return get_editor_interface().get_editor_paths().get_project_settings_dir()
 func get_config_path():
-	var dir = get_editor_interface().get_editor_settings().get_project_settings_dir()
-	var home = dir.plus_file(PLUGIN_CONFIG_DIR)
-	var path = home.plus_file(PLUGIN_CONFIG)
-
+	var dir = get_editor_interface().get_editor_paths().get_project_settings_dir()
+	var home = dir+"/"+PLUGIN_CONFIG_DIR
+	var path = home+"/"+(PLUGIN_CONFIG)
 	return path
 
 
@@ -107,7 +103,7 @@ func get_recent_plugin():
 
 
 func _on_request_refresh_plugin(p_name):
-	assert(not p_name.empty())
+	assert(not p_name.is_empty())
 
 	var disabled = not get_editor_interface().is_plugin_enabled(p_name)
 	if disabled:
